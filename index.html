@@ -732,7 +732,15 @@ async function generateTestCases() {
   const requirements = document.getElementById('manual-text').value.trim();
   if (!requirements) { showError('Введите требования для генерации'); return; }
 
-  // ... (оставьте получение настроек format, lang и т.д., как было)
+  // Собираем все настройки из интерфейса
+  const config = {
+    format: document.getElementById('format').value,
+    lang: document.getElementById('lang').value,
+    maxCases: document.getElementById('max-cases').value,
+    negative: document.getElementById('toggle-negative').checked,
+    boundary: document.getElementById('toggle-boundary').checked,
+    priority: document.getElementById('toggle-priority').checked
+  };
 
   const btn = document.getElementById('gen-btn');
   btn.classList.add('loading');
@@ -742,42 +750,38 @@ async function generateTestCases() {
   document.getElementById('empty-state').style.display = 'none';
   document.getElementById('results-body').style.display = 'flex';
   document.getElementById('results-body').innerHTML = '';
-  
-  // Укажите ваш API ключ Gemini здесь (или используйте переменную окружения)
-  const GEMINI_API_KEY = 'AIzaSyCqHDaaTzbsNcTIMNNryWs9oiwPsf_mO5A'; 
-  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  testCases = [];
+  updateCount(0);
 
-  const promptText = `Ты опытный QA-инженер. На основе требований ниже сгенерируй тест-кейсы... [оставьте ваш существующий промпт]`;
+  // ССЫЛКА НА ВАШЕГО БОТА (из скриншота)
+  const API_URL = 'https://mechtabot.onrender.com/generate';
 
   try {
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: promptText }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: "application/json", // Gemini принудительно вернет JSON
-        }
+      body: JSON.stringify({ 
+        requirements: requirements,
+        config: config // Передаем настройки, чтобы Gemini их видел
       })
     });
 
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message || 'API Error');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Ошибка сервера Render');
+    }
 
-    // Извлекаем текст из структуры ответа Gemini
-    let text = data.candidates[0].content.parts[0].text;
+    testCases = await response.json();
     
-    testCases = robustParseJSON(text);
-    if (!testCases || testCases.length === 0) throw new Error('Не удалось извлечь тест-кейсы');
-    
+    if (!testCases || !Array.isArray(testCases)) {
+      throw new Error('Модель вернула некорректный формат данных');
+    }
+
     renderTestCases(testCases);
     updateCount(testCases.length);
 
   } catch (e) {
-    showError('Ошибка генерации (Gemini): ' + e.message);
+    showError('Ошибка: ' + e.message);
     document.getElementById('empty-state').style.display = 'flex';
     document.getElementById('results-body').style.display = 'none';
   } finally {
