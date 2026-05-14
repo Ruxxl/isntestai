@@ -732,12 +732,7 @@ async function generateTestCases() {
   const requirements = document.getElementById('manual-text').value.trim();
   if (!requirements) { showError('Введите требования для генерации'); return; }
 
-  const format = document.getElementById('format').value;
-  const lang = document.getElementById('lang').value;
-  const maxCases = document.getElementById('max-cases').value;
-  const negative = document.getElementById('toggle-negative').checked;
-  const boundary = document.getElementById('toggle-boundary').checked;
-  const priority = document.getElementById('toggle-priority').checked;
+  // ... (оставьте получение настроек format, lang и т.д., как было)
 
   const btn = document.getElementById('gen-btn');
   btn.classList.add('loading');
@@ -747,59 +742,42 @@ async function generateTestCases() {
   document.getElementById('empty-state').style.display = 'none';
   document.getElementById('results-body').style.display = 'flex';
   document.getElementById('results-body').innerHTML = '';
-  testCases = [];
-  updateCount(0);
+  
+  // Укажите ваш API ключ Gemini здесь (или используйте переменную окружения)
+  const GEMINI_API_KEY = 'ВАШ_API_KEY_GEMINI'; 
+  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-  const formatInstructions = {
-    standard: 'Стандартный формат: Предусловия, пронумерованные Шаги, Ожидаемый результат',
-    gherkin: 'BDD/Gherkin формат: Feature, Scenario, Given/When/Then',
-    checklist: 'Чеклист: просто список проверок с ожидаемым результатом да/нет',
-    exploratory: 'Исследовательское тестирование: область, задача, временные рамки, идеи'
-  };
-
-  const prompt = `Ты опытный QA-инженер. На основе требований ниже сгенерируй тест-кейсы.
-
-ТРЕБОВАНИЯ:
-${requirements}
-
-ИНСТРУКЦИИ:
-- Формат: ${formatInstructions[format]}
-- Язык ответа: ${lang === 'ru' ? 'Русский' : 'English'}
-- Максимум тест-кейсов: ${maxCases}
-- ${negative ? 'ВКЛЮЧИ негативные сценарии (неверные данные, ошибки, граничные случаи)' : 'Только позитивные сценарии'}
-- ${boundary ? 'ВКЛЮЧИ тесты граничных значений' : 'Без граничных значений'}
-- ${priority ? 'Укажи приоритет каждого кейса (High/Medium/Low)' : 'Без приоритизации'}
-
-КРИТИЧЕСКИ ВАЖНО:
-- Верни ТОЛЬКО валидный JSON массив. Никакого текста до или после.
-- Никаких markdown-обёрток, никаких \`\`\`json блоков.
-- Каждое строковое значение должно быть на ОДНОЙ строке (никаких переносов строк внутри строк JSON).
-- Экранируй кавычки внутри строк как \\".
-- Строго следуй формату:
-[{"id":"TC-001","name":"...","preconditions":"...","steps":["Шаг 1","Шаг 2"],"expected":"...","priority":"High","type":"positive"}]`;
+  const promptText = `Ты опытный QA-инженер. На основе требований ниже сгенерируй тест-кейсы... [оставьте ваш существующий промпт]`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
-        messages: [{ role: 'user', content: prompt }]
+        contents: [{
+          parts: [{ text: promptText }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: "application/json", // Gemini принудительно вернет JSON
+        }
       })
     });
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.error?.message || 'API Error');
 
-    let text = data.content.map(b => b.text || '').join('');
+    // Извлекаем текст из структуры ответа Gemini
+    let text = data.candidates[0].content.parts[0].text;
+    
     testCases = robustParseJSON(text);
-    if (!testCases || testCases.length === 0) throw new Error('Не удалось извлечь тест-кейсы из ответа');
+    if (!testCases || testCases.length === 0) throw new Error('Не удалось извлечь тест-кейсы');
+    
     renderTestCases(testCases);
     updateCount(testCases.length);
 
   } catch (e) {
-    showError('Ошибка генерации: ' + e.message);
+    showError('Ошибка генерации (Gemini): ' + e.message);
     document.getElementById('empty-state').style.display = 'flex';
     document.getElementById('results-body').style.display = 'none';
   } finally {
